@@ -499,6 +499,16 @@ impl ProgressBar {
         })
     }
 
+    /// Reduce the position of a progress bar by delta.
+    pub fn sub(&self, delta: u64) {
+        self.update_and_draw(|state| {
+            state.pos = state.pos.saturating_sub(delta);
+            if state.steady_tick == 0 || state.tick == 0 {
+                state.tick = state.tick.saturating_add(1);
+            }
+        })
+    }
+
     /// A quick convenience check if the progress bar is hidden.
     pub fn is_hidden(&self) -> bool {
         self.state.read().unwrap().draw_target.is_hidden()
@@ -762,7 +772,7 @@ impl ProgressBar {
             if new_pos != old_pos {
                 state.est.record_step(new_pos);
             }
-            if new_pos >= state.draw_next {
+            if new_pos != state.draw_next {
                 state.draw_next = new_pos.saturating_add(state.draw_delta);
                 draw = true;
             }
