@@ -231,6 +231,7 @@ pub(crate) struct ProgressState {
     prefix: String,
     draw_delta: u64,
     draw_next: u64,
+    draw_prev: u64,
     status: Status,
     est: Estimate,
     tick_thread: Option<thread::JoinHandle<()>>,
@@ -374,6 +375,7 @@ impl ProgressBar {
                 tick: 0,
                 draw_delta: 0,
                 draw_next: 0,
+                draw_prev: 0,
                 status: Status::InProgress,
                 started: Instant::now(),
                 est: Estimate::new(),
@@ -476,6 +478,7 @@ impl ProgressBar {
         let mut state = self.state.write().unwrap();
         state.draw_delta = n;
         state.draw_next = state.pos.saturating_add(state.draw_delta);
+        state.draw_prev = state.pos.saturating_sub(state.draw_delta);
     }
 
     /// Manually ticks the spinner or progress bar.
@@ -552,6 +555,7 @@ impl ProgressBar {
     pub fn set_position(&self, pos: u64) {
         self.update_and_draw(|state| {
             state.draw_next = pos;
+            state.draw_prev = pos;
             state.pos = pos;
             if state.steady_tick == 0 || state.tick == 0 {
                 state.tick = state.tick.saturating_add(1);
@@ -562,6 +566,7 @@ impl ProgressBar {
     /// Sets the length of the progress bar.
     pub fn set_length(&self, len: u64) {
         self.update_and_draw(|state| {
+            state.draw_next = len;
             state.len = len;
         })
     }
@@ -570,6 +575,7 @@ impl ProgressBar {
     pub fn inc_length(&self, delta: u64) {
         self.update_and_draw(|state| {
             state.len = state.len.saturating_add(delta);
+            state.draw_next = state.len;
         })
     }
 
@@ -623,6 +629,7 @@ impl ProgressBar {
         self.reset_elapsed();
         self.update_and_draw(|state| {
             state.draw_next = 0;
+            state.draw_prev = 0;
             state.pos = 0;
             state.status = Status::InProgress;
         });
@@ -633,6 +640,7 @@ impl ProgressBar {
         self.update_and_draw(|state| {
             state.pos = state.len;
             state.draw_next = state.pos;
+            state.draw_prev = state.pos;
             state.status = Status::DoneVisible;
         });
     }
@@ -641,6 +649,7 @@ impl ProgressBar {
     pub fn finish_at_current_pos(&self) {
         self.update_and_draw(|state| {
             state.draw_next = state.pos;
+            state.draw_prev = state.pos;
             state.status = Status::DoneVisible;
         });
     }
@@ -655,6 +664,7 @@ impl ProgressBar {
             state.message = msg;
             state.pos = state.len;
             state.draw_next = state.pos;
+            state.draw_prev = state.pos;
             state.status = Status::DoneVisible;
         });
     }
@@ -664,6 +674,7 @@ impl ProgressBar {
         self.update_and_draw(|state| {
             state.pos = state.len;
             state.draw_next = state.pos;
+            state.draw_prev = state.pos;
             state.status = Status::DoneHidden;
         });
     }
@@ -683,6 +694,7 @@ impl ProgressBar {
         let msg = msg.to_string();
         self.update_and_draw(|state| {
             state.message = msg;
+            state.draw_next = state.pos;
             state.status = Status::DoneVisible;
         });
     }
@@ -772,8 +784,9 @@ impl ProgressBar {
             if new_pos != old_pos {
                 state.est.record_step(new_pos);
             }
-            if new_pos != state.draw_next {
+            if new_pos >= state.draw_next || new_pos <= state.draw_prev {
                 state.draw_next = new_pos.saturating_add(state.draw_delta);
+                state.draw_prev = new_pos.saturating_sub(state.draw_delta);
                 draw = true;
             }
         }
@@ -819,8 +832,9 @@ impl Drop for ProgressState {
         }
 
         self.status = Status::DoneHidden;
-        if self.pos >= self.draw_next {
+        if self.pos >= self.draw_next || self.pos <= self.draw_prev {
             self.draw_next = self.pos.saturating_add(self.draw_delta);
+            self.draw_prev = self.pos.saturating_sub(self.draw_delta);
             draw_state(self).ok();
         }
     }
